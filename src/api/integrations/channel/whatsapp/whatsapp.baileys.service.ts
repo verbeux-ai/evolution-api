@@ -1414,7 +1414,7 @@ export class BaileysStartupService extends ChannelStartupService {
           }
 
           if (contact) {
-            this.sendDataWebhook(Events.CONTACTS_UPDATE, contactRaw);
+            this.sendDataWebhook(Events.CONTACTS_UPDATE, [contactRaw]);
 
             if (this.configService.get<Chatwoot>('CHATWOOT').ENABLED && this.localChatwoot?.enabled) {
               await this.chatwootService.eventWhatsapp(
@@ -1434,7 +1434,7 @@ export class BaileysStartupService extends ChannelStartupService {
             continue;
           }
 
-          this.sendDataWebhook(Events.CONTACTS_UPSERT, contactRaw);
+          this.sendDataWebhook(Events.CONTACTS_UPSERT, [contactRaw]);
 
           if (this.configService.get<Database>('DATABASE').SAVE_DATA.CONTACTS)
             await this.prismaRepository.contact.upsert({
