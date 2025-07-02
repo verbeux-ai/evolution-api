@@ -1,4 +1,15 @@
-# 2.3.0 (develop)
+# 2.3.1 (develop)
+
+### Fixed
+
+* Update Baileys Version
+* Update Dockerhub Repository and Delete Config Session Variable
+* Fixed sending variables in typebot
+* Add unreadMessages in the response
+* Phone number as message ID for Evo AI
+* Fix upload to s3 when media message
+
+# 2.3.0 (2025-06-17 09:19)
 
 ### Feature
 
@@ -12,7 +23,7 @@
 ### Fixed
 
 * Shell injection vulnerability
-* Update Baileys Version v6.7.17
+* Update Baileys Version v6.7.18
 * Audio send duplicate from chatwoot
 * Chatwoot csat creating new conversation in another language
 * Refactor SQS controller to correct bug in sqs events by instance
@@ -21,6 +32,8 @@
 * Preventing use conversation from other inbox for the same user
 * Ensure full WhatsApp compatibility for audio conversion (libopus, 48kHz, mono)
 * Enhance message fetching and processing logic
+* Added lid on whatsapp numbers router
+* Now if the CONFIG_SESSION_PHONE_VERSION variable is not filled in it automatically searches for the most updated version
 
 ### Security
 

@@ -55,7 +55,7 @@ export class EvoaiService extends BaseChatbotService<Evoai, EvoaiSetting> {
           this.logger.debug(`[EvoAI] Downloading audio for Whisper transcription`);
           const transcription = await this.openaiService.speechToText(msg, instance);
           if (transcription) {
-            processedContent = transcription;
+            processedContent = `[audio] ${transcription}`;
           }
         } catch (err) {
           this.logger.error(`[EvoAI] Failed to transcribe audio: ${err}`);
@@ -70,7 +70,7 @@ export class EvoaiService extends BaseChatbotService<Evoai, EvoaiSetting> {
       }
 
       const callId = `req-${uuidv4().substring(0, 8)}`;
-      const messageId = msg?.key?.id || uuidv4();
+      const messageId = remoteJid.split('@')[0] || uuidv4(); // Use phone number as messageId
 
       // Prepare message parts
       const parts = [

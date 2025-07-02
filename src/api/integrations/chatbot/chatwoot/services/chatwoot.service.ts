@@ -295,51 +295,57 @@ export class ChatwootService {
     avatar_url?: string,
     jid?: string,
   ) {
-    const client = await this.clientCw(instance);
+    try {
+      const client = await this.clientCw(instance);
 
-    if (!client) {
-      this.logger.warn('client not found');
-      return null;
-    }
-
-    let data: any = {};
-    if (!isGroup) {
-      data = {
-        inbox_id: inboxId,
-        name: name || phoneNumber,
-        identifier: jid,
-        avatar_url: avatar_url,
-      };
-
-      if ((jid && jid.includes('@')) || !jid) {
-        data['phone_number'] = `+${phoneNumber}`;
+      if (!client) {
+        this.logger.warn('client not found');
+        return null;
       }
-    } else {
-      data = {
-        inbox_id: inboxId,
-        name: name || phoneNumber,
-        identifier: phoneNumber,
-        avatar_url: avatar_url,
-      };
-    }
 
-    const contact = await client.contacts.create({
-      accountId: this.provider.accountId,
-      data,
-    });
+      let data: any = {};
+      if (!isGroup) {
+        data = {
+          inbox_id: inboxId,
+          name: name || phoneNumber,
+          identifier: jid,
+          avatar_url: avatar_url,
+        };
 
-    if (!contact) {
-      this.logger.warn('contact not found');
+        if ((jid && jid.includes('@')) || !jid) {
+          data['phone_number'] = `+${phoneNumber}`;
+        }
+      } else {
+        data = {
+          inbox_id: inboxId,
+          name: name || phoneNumber,
+          identifier: phoneNumber,
+          avatar_url: avatar_url,
+        };
+      }
+
+      const contact = await client.contacts.create({
+        accountId: this.provider.accountId,
+        data,
+      });
+
+      if (!contact) {
+        this.logger.warn('contact not found');
+        return null;
+      }
+
+      const findContact = await this.findContact(instance, phoneNumber);
+
+      const contactId = findContact?.id;
+
+      await this.addLabelToContact(this.provider.nameInbox, contactId);
+
+      return contact;
+    } catch (error) {
+      this.logger.error('Error creating contact');
+      console.log(error);
       return null;
     }
-
-    const findContact = await this.findContact(instance, phoneNumber);
-
-    const contactId = findContact?.id;
-
-    await this.addLabelToContact(this.provider.nameInbox, contactId);
-
-    return contact;
   }
 
   public async updateContact(instance: InstanceDto, id: number, data: any) {
@@ -451,6 +457,24 @@ export class ChatwootService {
     }
   }
 
+  private async mergeContacts(baseId: number, mergeId: number) {
+    try {
+      const contact = await chatwootRequest(this.getClientCwConfig(), {
+        method: 'POST',
+        url: `/api/v1/accounts/${this.provider.accountId}/actions/contact_merge`,
+        body: {
+          base_contact_id: baseId,
+          mergee_contact_id: mergeId,
+        },
+      });
+
+      return contact;
+    } catch {
+      this.logger.error('Error merging contacts');
+      return null;
+    }
+  }
+
   private async mergeBrazilianContacts(contacts: any[]) {
     try {
       const contact = await chatwootRequest(this.getClientCwConfig(), {
@@ -543,12 +567,36 @@ export class ChatwootService {
   }
 
   public async createConversation(instance: InstanceDto, body: any) {
-    const remoteJid = body.key.remoteJid;
+    const isLid = body.key.remoteJid.includes('@lid') && body.key.senderPn;
+    const remoteJid = isLid ? body.key.senderPn : body.key.remoteJid;
     const cacheKey = `${instance.instanceName}:createConversation-${remoteJid}`;
     const lockKey = `${instance.instanceName}:lock:createConversation-${remoteJid}`;
     const maxWaitTime = 5000; // 5 secounds
 
     try {
+      // Processa atualização de contatos já criados @lid
+      if (body.key.remoteJid.includes('@lid') && body.key.senderPn && body.key.senderPn !== body.key.remoteJid) {
+        const contact = await this.findContact(instance, body.key.remoteJid.split('@')[0]);
+        if (contact && contact.identifier !== body.key.senderPn) {
+          this.logger.verbose(
+            `Identifier needs update: (contact.identifier: ${contact.identifier}, body.key.remoteJid: ${body.key.remoteJid}, body.key.senderPn: ${body.key.senderPn}`,
+          );
+          const updateContact = await this.updateContact(instance, contact.id, {
+            identifier: body.key.senderPn,
+            phone_number: `+${body.key.senderPn.split('@')[0]}`,
+          });
+
+          if (updateContact === null) {
+            const baseContact = await this.findContact(instance, body.key.senderPn.split('@')[0]);
+            if (baseContact) {
+              await this.mergeContacts(baseContact.id, contact.id);
+              this.logger.verbose(
+                `Merge contacts: (${baseContact.id}) ${baseContact.phone_number} and (${contact.id}) ${contact.phone_number}`,
+              );
+            }
+          }
+        }
+      }
       this.logger.verbose(`--- Start createConversation ---`);
       this.logger.verbose(`Instance: ${JSON.stringify(instance)}`);
 
@@ -626,7 +674,7 @@ export class ChatwootService {
               instance,
               body.key.participant.split('@')[0],
               filterInbox.id,
-              false,
+              isGroup,
               body.pushName,
               picture_url.profilePictureUrl || null,
               body.key.participant,
@@ -654,10 +702,8 @@ export class ChatwootService {
                     (v) => contact.name === v || contact.name === v.substring(3) || contact.name === v.substring(1),
                   )
                 : false);
-
             this.logger.verbose(`Picture needs update: ${pictureNeedsUpdate}`);
             this.logger.verbose(`Name needs update: ${nameNeedsUpdate}`);
-
             if (pictureNeedsUpdate || nameNeedsUpdate) {
               contact = await this.updateContact(instance, contact.id, {
                 ...(nameNeedsUpdate && { name: nameContact }),
@@ -667,7 +713,7 @@ export class ChatwootService {
             }
           }
         } else {
-          const jid = body.key.remoteJid;
+          const jid = isLid && body?.key?.senderPn ? body.key.senderPn : body.key.remoteJid;
           contact = await this.createContact(
             instance,
             chatId,
@@ -704,8 +750,7 @@ export class ChatwootService {
         if (inboxConversation) {
           if (this.provider.reopenConversation) {
             this.logger.verbose(`Found conversation in reopenConversation mode: ${JSON.stringify(inboxConversation)}`);
-
-            if (this.provider.conversationPending && inboxConversation.status !== 'open') {
+            if (inboxConversation && this.provider.conversationPending && inboxConversation.status !== 'open') {
               await client.conversations.toggleStatus({
                 accountId: this.provider.accountId,
                 conversationId: inboxConversation.id,
@@ -716,7 +761,8 @@ export class ChatwootService {
             }
           } else {
             inboxConversation = contactConversations.payload.find(
-              (conversation) => conversation.status !== 'resolved' && conversation.inbox_id == filterInbox.id,
+              (conversation) =>
+                conversation && conversation.status !== 'resolved' && conversation.inbox_id == filterInbox.id,
             );
             this.logger.verbose(`Found conversation: ${JSON.stringify(inboxConversation)}`);
           }
@@ -737,6 +783,14 @@ export class ChatwootService {
           data['status'] = 'pending';
         }
 
+        /*
+        Triple check after lock
+        Utilizei uma nova verificação para evitar que outra thread execute entre o terminio do while e o set lock
+        */
+        if (await this.cache.has(cacheKey)) {
+          return (await this.cache.get(cacheKey)) as number;
+        }
+
         const conversation = await client.conversations.create({
           accountId: this.provider.accountId,
           data,
@@ -747,7 +801,7 @@ export class ChatwootService {
           return null;
         }
 
-        this.logger.verbose(`New conversation created with ID: ${conversation.id}`);
+        this.logger.verbose(`New conversation created of ${remoteJid} with ID: ${conversation.id}`);
         this.cache.set(cacheKey, conversation.id);
         return conversation.id;
       } finally {

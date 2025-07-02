@@ -280,7 +280,7 @@ export abstract class BaseChatbotController<BotType = any, BotData extends BaseC
       });
 
       if (!bot) {
-        throw new Error(`${this.integrationName} not found`);
+        return null;
       }
 
       return bot;
@@ -877,6 +877,12 @@ export abstract class BaseChatbotController<BotType = any, BotData extends BaseC
 
       // Skip if session exists but not awaiting user input
       if (session && session.status === 'closed') {
+        return;
+      }
+
+      // Skip if session exists and status is paused
+      if (session && session.status === 'paused') {
+        this.logger.warn(`Session for ${remoteJid} is paused, skipping message processing`);
         return;
       }
 
